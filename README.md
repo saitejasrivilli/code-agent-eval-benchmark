@@ -26,16 +26,7 @@ The results are summarized both in CSV format and in a visual performance vs lat
 
 ---
 
-## Repository Structure
-
-.
-├── eval_benchmark.ipynb
-├── detailed_results.csv
-├── metrics_summary.csv
-├── performance_vs_latency.png
-└── README.md
-
-
+Files:
 - **eval_benchmark.ipynb**  
   Main evaluation notebook. Runs model calls, captures latency and tokens, and computes summary metrics.
 

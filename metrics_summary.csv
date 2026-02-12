@@ -1,0 +1,5 @@
+Model,pass@1,Latency
+allam-2-7b,10.0%,0.34s
+llama-3.1-8b-instant,50.0%,0.13s
+openai/gpt-oss-20b,10.0%,0.42s
+meta-llama/llama-4-scout-17b-16e-instruct,100.0%,0.48s

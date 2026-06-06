@@ -69,6 +69,21 @@ Useful for estimating cost and efficiency.
 | allam-2-7b | 10% | ~0.34 | ~280 |
 | openai/gpt-oss-20b | 10% | ~0.41 | ~490 |
 
+### Qwen2.5-7B-Instruct — Multi-Axis Benchmark (measured on NVIDIA A30)
+
+| Benchmark | Metric | Score |
+|-----------|--------|-------|
+| GSM8K (n=50) | Accuracy | **0.540** |
+| HumanEval-style (n=10) | pass@1 | **0.700** |
+| LLM-as-Judge (n=10) | Avg score | **8.2/10** |
+| &nbsp;&nbsp;↳ Math reasoning | score | 8.5/10 |
+| &nbsp;&nbsp;↳ Code generation | score | 8.0/10 |
+| &nbsp;&nbsp;↳ Logical reasoning | score | 9.0/10 |
+| &nbsp;&nbsp;↳ Instruction following | score | 8.0/10 |
+| &nbsp;&nbsp;↳ Knowledge | score | 7.5/10 |
+
+Full results: `results/base_model/eval_results.json`
+
 ### Quick Takeaways
 
 - `llama-3.1-8b-instant` is the fastest model in this benchmark.

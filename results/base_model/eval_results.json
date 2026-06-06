@@ -1,0 +1,177 @@
+{
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "adapter": null,
+  "timestamp": "2026-06-06T21:14:05.108159",
+  "benchmarks": {
+    "gsm8k": {
+      "benchmark": "gsm8k",
+      "n": 50,
+      "accuracy": 0.54,
+      "correct": 27,
+      "samples": [
+        {
+          "question": "Darrell and Allen's ages are in the ratio of 7:11. If their total age now is 162",
+          "gt": 109.0,
+          "pred": 109.0,
+          "correct": true
+        },
+        {
+          "question": "Lorraine and Colleen are trading stickers for buttons. Each large sticker is wor",
+          "gt": 89.0,
+          "pred": 20.0,
+          "correct": false
+        },
+        {
+          "question": "Indras has 6 letters in her name. Her sister's name has 4 more letters than half",
+          "gt": 13.0,
+          "pred": 13.0,
+          "correct": true
+        },
+        {
+          "question": "Bethany can run 10 laps on the track in one hour.  Trey can run 4 more laps than",
+          "gt": 5.0,
+          "pred": 5.0,
+          "correct": true
+        },
+        {
+          "question": "An ice cream truck is traveling through a neighborhood. Children from various ho",
+          "gt": 25.0,
+          "pred": 10.0,
+          "correct": false
+        }
+      ]
+    },
+    "humaneval": {
+      "benchmark": "humaneval",
+      "n": 10,
+      "pass_at_1": 0.7,
+      "passed": 7,
+      "samples": [
+        {
+          "id": "he_1",
+          "passed": true,
+          "error": ""
+        },
+        {
+          "id": "he_2",
+          "passed": false,
+          "error": "Traceback (most recent call last):\n  File \"<string>\", line 24, in <module>\nAssertionError\n"
+        },
+        {
+          "id": "he_3",
+          "passed": true,
+          "error": ""
+        },
+        {
+          "id": "he_4",
+          "passed": false,
+          "error": "  File \"<string>\", line 5\n    for op in operations:\nIndentationError: unexpected indent\n"
+        },
+        {
+          "id": "he_5",
+          "passed": true,
+          "error": ""
+        },
+        {
+          "id": "he_6",
+          "passed": false,
+          "error": "Traceback (most recent call last):\n  File \"<string>\", line 13, in <module>\nAssertionError\n"
+        },
+        {
+          "id": "he_7",
+          "passed": true,
+          "error": ""
+        },
+        {
+          "id": "he_8",
+          "passed": true,
+          "error": ""
+        },
+        {
+          "id": "he_9",
+          "passed": true,
+          "error": ""
+        },
+        {
+          "id": "he_10",
+          "passed": true,
+          "error": ""
+        }
+      ]
+    },
+    "llm_judge": {
+      "benchmark": "llm_judge",
+      "n": 10,
+      "avg_score_10": 8.2,
+      "by_category": {
+        "math_reasoning": 8.5,
+        "code": 8.0,
+        "reasoning": 9.0,
+        "instruction_following": 8.0,
+        "knowledge": 7.5
+      },
+      "samples": [
+        {
+          "category": "math_reasoning",
+          "question": "What is 15% of 840? Show your work.",
+          "score_10": 10.0,
+          "judgment": "Score: 10/10\nThe response is clear, well-structured, and correctly addresses the question."
+        },
+        {
+          "category": "math_reasoning",
+          "question": "A train travels at 60 mph for 2.5 hours then 80 mph for 1.5 ",
+          "score_10": 7.0,
+          "judgment": "Score: 7/10\nMain weakness: The response contains a typo (\"No\" instead of concluding the calculation) but otherwise correctly calculates the average sp"
+        },
+        {
+          "category": "code",
+          "question": "Write a Python function that takes a list of integers and re",
+          "score_10": 8.0,
+          "judgment": "Score: 8/10\nMain strength: The response is correct and complete, addressing the question effectively."
+        },
+        {
+          "category": "code",
+          "question": "Write a Python function to check if a string is a valid pali",
+          "score_10": 8.0,
+          "judgment": "Score: 8/10\nMain strength: The response correctly addresses the problem and provides a clear and concise implementation."
+        },
+        {
+          "category": "reasoning",
+          "question": "If all programmers drink coffee, and Bob drinks coffee, is B",
+          "score_10": 8.0,
+          "judgment": "Score: 8/10\n\nThe main strength is that the response correctly addresses the logical reasoning behind the question and provides a clear explanation. Th"
+        },
+        {
+          "category": "reasoning",
+          "question": "A farmer has 17 sheep. All but 9 die. How many sheep are lef",
+          "score_10": 10.0,
+          "judgment": "Score: 10/10\nMain strength: The response is correct, complete, and clear."
+        },
+        {
+          "category": "instruction_following",
+          "question": "List 5 sorting algorithms in order of worst-case time comple",
+          "score_10": 7.0,
+          "judgment": "Score: 7/10\n\nThe response correctly identifies the worst-case time complexities for Quicksort and Heapsort but fails to include three more algorithms "
+        },
+        {
+          "category": "instruction_following",
+          "question": "Explain the difference between process and thread in exactly",
+          "score_10": 9.0,
+          "judgment": "Score: 9/10\nMain strength: The response is clear, concise, and accurately explains the difference between a process and a thread, addressing the quest"
+        },
+        {
+          "category": "knowledge",
+          "question": "Explain what gradient descent is and why we need learning ra",
+          "score_10": 7.0,
+          "judgment": "Score: 7/10\n\nThe main strength is that the response correctly explains what gradient descent is and provides a basic outline of how it works. However,"
+        },
+        {
+          "category": "knowledge",
+          "question": "What is the difference between precision and recall in class",
+          "score_10": 8.0,
+          "judgment": "Score: 8/10\n\nThe main strength is that the response correctly defines precision and recall, provides a clear formula for precision, and gives a good e"
+        }
+      ]
+    }
+  }
+}

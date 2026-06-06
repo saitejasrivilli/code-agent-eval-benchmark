@@ -90,6 +90,52 @@ This makes it easy to compare speed, quality, and efficiency at a glance.
 
 ---
 
+## Extended Evaluation: GSM8K + HumanEval + LLM-as-Judge (`eval_benchmarks.py`)
+
+A new multi-axis harness (`eval_benchmarks.py`) extends the original latency/pass@1 benchmark with:
+
+### Benchmarks
+
+| Benchmark | Task | Metric | How |
+|-----------|------|--------|-----|
+| **GSM8K** | Math reasoning (7,473 problems) | Exact-match accuracy | Numeric extraction + ±1e-4 tolerance |
+| **HumanEval-style** | Code generation (10 representative problems) | pass@1 | Subprocess execution + test assertion |
+| **LLM-as-Judge** | Open-ended quality (10 questions) | Score 0–10 | Self-judge via structured prompt |
+
+### HumanEval-style categories covered
+
+- List manipulation (`has_close_elements`, `intersperse`, `rolling_max`)
+- String parsing (`separate_paren_groups`, `parse_nested_parens`, `filter_by_substring`)
+- Numeric (`truncate_number`, `below_zero`, `mean_absolute_deviation`, `sum_product`)
+
+### LLM-as-Judge categories
+
+- Math reasoning, Code generation, Logical reasoning, Instruction following, Knowledge
+
+### Usage
+
+```bash
+pip install torch transformers peft datasets
+
+# Evaluate base model
+python eval_benchmarks.py \
+    --base_model Qwen/Qwen2.5-7B-Instruct \
+    --benchmarks gsm8k humaneval llm_judge \
+    --gsm8k_n 100 --humaneval_n 10 --judge_n 10 \
+    --output_dir results/base
+
+# Evaluate fine-tuned model (with LoRA adapter)
+python eval_benchmarks.py \
+    --base_model Qwen/Qwen2.5-7B-Instruct \
+    --adapter_path /path/to/lora/adapter \
+    --benchmarks gsm8k humaneval llm_judge \
+    --output_dir results/finetuned
+```
+
+Outputs: `results/eval_results.json` + `results/eval_report.md`
+
+---
+
 ## How to Run
 
 ### 1. Install Dependencies

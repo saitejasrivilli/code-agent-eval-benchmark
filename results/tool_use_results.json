@@ -1,0 +1,186 @@
+{
+  "n_tasks": 14,
+  "task_success": 1.0,
+  "avg_steps_per_task": 1.29,
+  "tool_accuracy": 0.8889,
+  "error_recovery_rate": 1.0,
+  "avg_latency_s": 0.015,
+  "per_category": {
+    "computation": {
+      "total": 5,
+      "success": 5,
+      "accuracy": 1.0
+    },
+    "multi_step": {
+      "total": 5,
+      "success": 5,
+      "accuracy": 1.0
+    },
+    "knowledge_compute": {
+      "total": 2,
+      "success": 2,
+      "accuracy": 1.0
+    },
+    "error_recovery": {
+      "total": 2,
+      "success": 2,
+      "accuracy": 1.0
+    }
+  },
+  "tasks": [
+    {
+      "id": "fib_15",
+      "category": "computation",
+      "success": true,
+      "final_answer": "610",
+      "expected": "610",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.027
+    },
+    {
+      "id": "primes_50",
+      "category": "computation",
+      "success": true,
+      "final_answer": "15",
+      "expected": "15",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.026
+    },
+    {
+      "id": "sum_squares",
+      "category": "computation",
+      "success": true,
+      "final_answer": "2870",
+      "expected": "2870",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.027
+    },
+    {
+      "id": "factorial_10",
+      "category": "computation",
+      "success": true,
+      "final_answer": "3628800",
+      "expected": "3628800",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    },
+    {
+      "id": "compound_interest",
+      "category": "computation",
+      "success": true,
+      "final_answer": "1628.89462678",
+      "expected": "1628.89",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    },
+    {
+      "id": "sqrt_then_check",
+      "category": "multi_step",
+      "success": true,
+      "final_answer": "25",
+      "expected": "25 yes",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    },
+    {
+      "id": "fizzbuzz_count",
+      "category": "multi_step",
+      "success": true,
+      "final_answer": "47",
+      "expected": "47",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.025
+    },
+    {
+      "id": "digit_sum_factorial",
+      "category": "multi_step",
+      "success": true,
+      "final_answer": "27",
+      "expected": "27",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.025
+    },
+    {
+      "id": "geometric_series",
+      "category": "multi_step",
+      "success": true,
+      "final_answer": "19682.0",
+      "expected": "19682",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    },
+    {
+      "id": "collatz_steps",
+      "category": "multi_step",
+      "success": true,
+      "final_answer": "111",
+      "expected": "111",
+      "n_steps": 1,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.024
+    },
+    {
+      "id": "circle_area_pi",
+      "category": "knowledge_compute",
+      "success": true,
+      "final_answer": "153.93804003",
+      "expected": "153.9380",
+      "n_steps": 2,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    },
+    {
+      "id": "light_travel",
+      "category": "knowledge_compute",
+      "success": true,
+      "final_answer": "299.792458",
+      "expected": "299.792458",
+      "n_steps": 2,
+      "error_recovered": false,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    },
+    {
+      "id": "ambiguous_sqrt",
+      "category": "error_recovery",
+      "success": true,
+      "final_answer": "1.0",
+      "expected": "1",
+      "n_steps": 2,
+      "error_recovered": true,
+      "hit_step_limit": false,
+      "latency_s": 0.05
+    },
+    {
+      "id": "safe_division",
+      "category": "error_recovery",
+      "success": true,
+      "final_answer": "20.0",
+      "expected": "20",
+      "n_steps": 2,
+      "error_recovered": true,
+      "hit_step_limit": false,
+      "latency_s": 0.0
+    }
+  ]
+}

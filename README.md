@@ -216,72 +216,24 @@ Outputs: `results/eval_results.json` + `results/eval_report.md`
 
 ```bash
 pip install pandas matplotlib
-You may also need SDKs or API clients for the models you are evaluating.
+# You may also need SDKs or API clients for the models you are evaluating.
+```
 
-2. Run the Notebook
+### 2. Run the Notebook
+
+```bash
 jupyter notebook eval_benchmark.ipynb
-The notebook will:
+```
 
-Load evaluation tasks
+The notebook will load tasks, query each model, measure latency and token usage, compute Pass@1, and export `detailed_results.csv`, `metrics_summary.csv`, and `performance_vs_latency.png`.
 
-Query each model
+### Adding a New Model
 
-Measure latency
+Add its inference call in `eval_benchmark.ipynb`, capture model output, latency, and token usage, re-run, and regenerate the summary CSV and visualization. Keep logging consistent so comparisons remain fair.
 
-Record token usage
+---
 
-Compute Pass@1
+## Why This Benchmark Exists
 
-Export:
-
-detailed_results.csv
-
-metrics_summary.csv
-
-performance_vs_latency.png
-
-Adding a New Model
-To include another model:
-
-Add its inference call in eval_benchmark.ipynb
-
-Capture:
-
-Model output
-
-Latency
-
-Token usage
-
-Re-run the evaluation
-
-Regenerate the summary CSV and visualization
-
-Keep logging consistent so comparisons remain fair.
-
-Why This Benchmark Exists
-When building code agents or automation systems, accuracy alone is not enough.
-
-You also care about:
-
-Response time
-
-Token efficiency
-
-Cost
-
-Reliability
-
-This project provides a simple, reproducible way to compare those tradeoffs in one place.
-
-Future Improvements
-Multi-run averages for stability
-
-Pass@k evaluation
-
-Cost-per-success metric
-
-Larger task set
-
-Standardized code evaluation datasets
+When building code agents or automation systems, accuracy alone is not enough. You also care about response time, token efficiency, cost, and reliability under tool-call failures. This project provides a simple, reproducible way to compare those tradeoffs — including a ReAct agent harness that tests error recovery, multi-step chaining, and tool accuracy, not just single-turn pass@1.
 

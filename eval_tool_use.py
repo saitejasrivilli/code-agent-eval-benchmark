@@ -161,16 +161,24 @@ TASKS: list[Task] = [
 
 # ── ReAct agent loop ──────────────────────────────────────────────────────────
 
-_TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
-_FINAL_RE = re.compile(r"<final_answer>(.*?)</final_answer>", re.DOTALL | re.IGNORECASE)
+_TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)(?:</tool_call>|$)", re.DOTALL)
+_FINAL_RE = re.compile(r"<final_answer>(.*?)(?:</final_answer>|$)", re.DOTALL | re.IGNORECASE)
 
 
 def _parse_tool_call(raw: str) -> tuple[str, dict] | None:
+    raw = raw.strip()
+    obj = None
     try:
-        obj = json.loads(raw.strip())
-        return obj["tool"], obj.get("args", {})
+        obj = json.loads(raw)
     except Exception:
+        try:
+            import ast
+            obj = ast.literal_eval(raw)
+        except Exception:
+            pass
+    if not isinstance(obj, dict) or "tool" not in obj:
         return None
+    return obj["tool"], obj.get("args", {})
 
 
 def _normalise_answer(text: str) -> str:
@@ -225,11 +233,15 @@ class TaskResult:
 
 def run_react_agent(
     task: Task,
-    model_fn,          # callable(prompt: str) -> str
+    model_fn=None,     # callable(prompt: str) -> str  — raw concat format
+    react_fn=None,     # callable(messages: list[dict]) -> str  — chat template format
 ) -> TaskResult:
     """
-    Run a single ReAct loop. model_fn generates the next action given the
-    current conversation context.
+    Run a single ReAct loop.
+
+    Prefer react_fn (apply_chat_template) for instruct-tuned models.
+    model_fn (raw concatenated string) is kept for backwards compatibility
+    and rule-based agents.
     """
     t0 = time.time()
     system = (
@@ -248,10 +260,13 @@ def run_react_agent(
     success = False
 
     for step_num in range(1, task.max_steps + 1):
-        context = "\n".join(
-            f"{m['role'].upper()}: {m['content']}" for m in messages
-        )
-        response = model_fn(context)
+        if react_fn is not None:
+            response = react_fn(messages)
+        else:
+            context = "\n".join(
+                f"{m['role'].upper()}: {m['content']}" for m in messages
+            )
+            response = model_fn(context)
         messages.append({"role": "assistant", "content": response})
 
         # Check for final answer first
@@ -337,10 +352,55 @@ def build_model_fn(model, tokenizer, max_new_tokens: int = 256):
     return _call
 
 
+def build_react_fn(model, tokenizer, max_new_tokens: int = 512):
+    """
+    Multi-turn ReAct fn that uses apply_chat_template.
+
+    Instruct-tuned models (Qwen, Llama-3-Instruct, etc.) require the chat
+    template so the model knows to generate as an assistant. Without it they
+    continue the concatenated string as plain text and never emit tool calls.
+
+    The 'tool' role is remapped to 'user' (observation wrapped in [OBS])
+    because most models' chat templates only accept system/user/assistant.
+    Consecutive user/tool messages are merged to avoid template validation
+    errors on double-user-turn sequences.
+    """
+    import torch
+    ROLE_MAP = {"system": "system", "user": "user", "assistant": "assistant", "tool": "user"}
+
+    def fn(messages: list[dict]) -> str:
+        normalized: list[dict] = []
+        for m in messages:
+            role = ROLE_MAP.get(m["role"], "user")
+            if normalized and normalized[-1]["role"] == "user" and role == "user":
+                normalized[-1] = {"role": "user",
+                                   "content": normalized[-1]["content"] + "\n" + m["content"]}
+            else:
+                normalized.append({"role": role, "content": m["content"]})
+
+        text = tokenizer.apply_chat_template(
+            normalized, tokenize=False, add_generation_prompt=True
+        )
+        enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=4096).to(
+            next(model.parameters()).device
+        )
+        with torch.no_grad():
+            out = model.generate(
+                **enc,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        generated = out[0][enc["input_ids"].shape[1]:]
+        return tokenizer.decode(generated, skip_special_tokens=True)
+    return fn
+
+
 def eval_tool_use(
     model=None,
     tokenizer=None,
     model_fn=None,
+    react_fn=None,
     tasks: list[Task] | None = None,
     output_path: str | None = None,
 ) -> dict:
@@ -350,17 +410,18 @@ def eval_tool_use(
     Pass either (model, tokenizer) for a HuggingFace model, or model_fn
     directly for a custom callable.
     """
-    assert model_fn is not None or (model is not None and tokenizer is not None), \
-        "provide model+tokenizer or model_fn"
+    assert (model_fn is not None or react_fn is not None
+            or (model is not None and tokenizer is not None)), \
+        "provide model+tokenizer, model_fn, or react_fn"
 
-    if model_fn is None:
-        model_fn = build_model_fn(model, tokenizer)
+    if react_fn is None and model_fn is None:
+        react_fn = build_react_fn(model, tokenizer)
     if tasks is None:
         tasks = TASKS
 
     results: list[TaskResult] = []
     for task in tasks:
-        r = run_react_agent(task, model_fn)
+        r = run_react_agent(task, model_fn=model_fn, react_fn=react_fn)
         results.append(r)
         status = "✓" if r.success else "✗"
         print(f"  [{status}] {task.id:30s} steps={len(r.steps)} answer={r.final_answer!r}")
@@ -504,9 +565,10 @@ if __name__ == "__main__":
         import torch
         tok = AutoTokenizer.from_pretrained(args.model)
         mdl = AutoModelForCausalLM.from_pretrained(
-            args.model, torch_dtype=torch.float16, device_map="auto"
+            args.model, dtype=torch.float16, device_map="auto"
         )
-        summary = eval_tool_use(model=mdl, tokenizer=tok, output_path=args.output)
+        rfn = build_react_fn(mdl, tok)
+        summary = eval_tool_use(react_fn=rfn, output_path=args.output)
 
     print(f"\n=== Results ===")
     print(f"  Task success:      {summary['task_success']:.1%}  ({int(summary['task_success']*summary['n_tasks'])}/{summary['n_tasks']})")

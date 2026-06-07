@@ -36,8 +36,39 @@ from eval_tool_use import (
     TASKS, Task, TaskResult, StepRecord,
     TOOLS, TOOL_DESCRIPTIONS,
     _answers_match, _TOOL_CALL_RE, _FINAL_RE, _parse_tool_call,
-    _rule_based_agent, eval_tool_use, build_model_fn,
+    _rule_based_agent, eval_tool_use, build_model_fn, build_react_fn,
 )
+
+
+def build_chat_fn(model, tokenizer, max_new_tokens: int = 256) -> Callable[[str], str]:
+    """
+    One-shot chat wrapper using apply_chat_template.
+
+    Used for Planner and Critic agents which send a single structured
+    prompt (not a multi-turn ReAct trace). Without this, instruct-tuned
+    models don't receive their expected <|im_start|> formatting and
+    produce garbage instead of APPROVED/REJECTED.
+
+    The Executor continues using the raw build_model_fn because its
+    context is already a multi-turn ReAct trace, not a chat message.
+    """
+    def fn(prompt: str) -> str:
+        messages = [{"role": "user", "content": prompt}]
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        enc = tokenizer(text, return_tensors="pt", truncation=True, max_length=2048).to(
+            model.device
+        )
+        out = model.generate(
+            **enc,
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+        generated = out[0][enc["input_ids"].shape[1]:]
+        return tokenizer.decode(generated, skip_special_tokens=True)
+    return fn
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +162,17 @@ def _rule_based_planner(task: Task) -> Plan:
 # Executor agent — extends ReAct with plan as prefix context
 # ---------------------------------------------------------------------------
 
-def execute(task: Task, plan: Plan, model_fn: Callable[[str], str]) -> TaskResult:
+def execute(
+    task: Task,
+    plan: Plan,
+    model_fn: Callable[[str], str] | None = None,
+    react_fn: Callable[[list], str] | None = None,
+) -> TaskResult:
     """
     Run the ReAct loop with the plan prepended as system context.
-    Reuses all the existing tool infrastructure from eval_tool_use.
+
+    react_fn (apply_chat_template) is preferred for instruct-tuned models.
+    model_fn (raw concat string) is kept for rule-based / demo mode.
     """
     t0 = time.time()
     system = (
@@ -154,8 +192,11 @@ def execute(task: Task, plan: Plan, model_fn: Callable[[str], str]) -> TaskResul
     success = False
 
     for step_num in range(1, task.max_steps + 1):
-        context = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
-        response = model_fn(context)
+        if react_fn is not None:
+            response = react_fn(messages)
+        else:
+            context = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
+            response = model_fn(context)
         messages.append({"role": "assistant", "content": response})
 
         fa_match = _FINAL_RE.search(response)
@@ -258,7 +299,9 @@ def _rule_based_critic(task: Task, answer: str) -> CritiqueResult:
 
 def run_multi_agent(
     task: Task,
-    model_fn: Callable[[str], str],
+    model_fn: Callable[[str], str] | None = None,
+    chat_fn: Callable[[str], str] | None = None,
+    react_fn: Callable[[list], str] | None = None,
     demo: bool = False,
 ) -> MultiAgentResult:
     """
@@ -266,35 +309,60 @@ def run_multi_agent(
 
     Parameters
     ----------
+    react_fn : callable(messages: list[dict]) -> str
+        Chat-template-aware fn for the Executor's multi-turn ReAct loop.
+        Required for instruct-tuned models; overrides model_fn for Executor.
+    chat_fn : callable(prompt: str) -> str
+        apply_chat_template one-shot fn for Planner + Critic.
+    model_fn : callable(prompt: str) -> str
+        Raw concat fn — used for demo/rule-based mode or as fallback.
     demo : bool
-        If True, uses deterministic rule-based agents (no LLM calls needed).
-        Useful for CI and benchmarking without a GPU.
+        If True, all agents are deterministic rule-based (no GPU needed).
     """
     t0 = time.time()
+    one_shot_fn = chat_fn if chat_fn is not None else model_fn
 
     # 1. Plan
-    task_plan = _rule_based_planner(task) if demo else plan(task, model_fn)
+    task_plan = _rule_based_planner(task) if demo else plan(task, one_shot_fn)
 
-    # 2. Execute
-    exec_model = _rule_based_agent if demo else model_fn
-    result = execute(task, task_plan, exec_model)
+    # 2. Execute — use react_fn (chat template) when available
+    if demo:
+        result = execute(task, task_plan, model_fn=_rule_based_agent)
+    else:
+        result = execute(task, task_plan, react_fn=react_fn, model_fn=model_fn)
 
     # 3. Critique
     crit = (
         _rule_based_critic(task, result.final_answer)
         if demo
-        else critique(task, result.final_answer, model_fn)
+        else critique(task, result.final_answer, one_shot_fn)
     )
 
     retried = False
 
-    # 4. Retry once with critic feedback injected as context
+    # 4. Retry once with critic feedback injected into the executor context
     if not crit.approved:
-        def feedback_model_fn(prompt: str) -> str:
-            augmented = prompt + f"\n\nCRITIC FEEDBACK: {crit.feedback}\nPlease correct your answer."
-            return exec_model(augmented)
+        feedback_suffix = f"\n\nCRITIC FEEDBACK: {crit.feedback}\nPlease correct your answer."
 
-        retry_result = execute(task, task_plan, feedback_model_fn)
+        if demo:
+            def feedback_exec(prompt: str) -> str:
+                return _rule_based_agent(prompt + feedback_suffix)
+            retry_result = execute(task, task_plan, model_fn=feedback_exec)
+        elif react_fn is not None:
+            saved_react_fn = react_fn
+            def feedback_react(messages: list) -> str:
+                # Append critic note to the last user message before generating
+                augmented = messages[:-1] + [
+                    {"role": "user",
+                     "content": messages[-1]["content"] + feedback_suffix}
+                ] if messages else messages
+                return saved_react_fn(augmented)
+            retry_result = execute(task, task_plan, react_fn=feedback_react)
+        else:
+            def feedback_model_fn(prompt: str) -> str:
+                return model_fn(prompt + feedback_suffix)
+            retry_result = execute(task, task_plan, model_fn=feedback_model_fn)
+
         retried = True
         if retry_result.success or (not result.success):
             result = retry_result
@@ -315,11 +383,16 @@ def run_multi_agent(
 def eval_multi_agent(
     tasks: list[Task],
     model_fn: Callable[[str], str] | None = None,
+    chat_fn: Callable[[str], str] | None = None,
+    react_fn: Callable[[list], str] | None = None,
     demo: bool = False,
 ) -> dict:
-    if model_fn is None:
+    if demo and model_fn is None:
         model_fn = _rule_based_agent
-    results = [run_multi_agent(t, model_fn, demo=demo) for t in tasks]
+    results = [
+        run_multi_agent(t, model_fn=model_fn, chat_fn=chat_fn, react_fn=react_fn, demo=demo)
+        for t in tasks
+    ]
     n = len(results)
     return {
         "task_success":    round(sum(r.success for r in results) / n, 3),
@@ -337,17 +410,22 @@ def eval_multi_agent(
 def compare(
     demo: bool = True,
     model_fn: Callable[[str], str] | None = None,
+    chat_fn: Callable[[str], str] | None = None,
+    react_fn: Callable[[list], str] | None = None,
 ) -> None:
-    fn = model_fn if model_fn is not None else _rule_based_agent
-
     print("Single-agent (ReAct only):")
-    single = eval_tool_use(model_fn=fn)
+    if demo:
+        single = eval_tool_use(model_fn=_rule_based_agent)
+    else:
+        single = eval_tool_use(react_fn=react_fn)
     print(f"  task_success={single['task_success']}  "
           f"tool_accuracy={single['tool_accuracy']}  "
           f"avg_steps={single['avg_steps_per_task']}")
 
     print("\nMulti-agent (Planner → Executor → Critic):")
-    multi = eval_multi_agent(TASKS, model_fn=fn, demo=demo)
+    multi = eval_multi_agent(
+        TASKS, model_fn=model_fn, chat_fn=chat_fn, react_fn=react_fn, demo=demo
+    )
     print(f"  task_success={multi['task_success']}  "
           f"retry_rate={multi['retry_rate']}  "
           f"critic_approval={multi['critic_approval']}")
@@ -374,18 +452,23 @@ if __name__ == "__main__":
 
     if demo:
         model_fn = _rule_based_agent
+        chat_fn = react_fn = None
     else:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         tok = AutoTokenizer.from_pretrained(args.model)
         mdl = AutoModelForCausalLM.from_pretrained(
-            args.model, torch_dtype=torch.float16, device_map="auto"
+            args.model, dtype=torch.float16, device_map="auto"
         )
-        model_fn = build_model_fn(mdl, tok)
+        model_fn = None
+        react_fn = build_react_fn(mdl, tok)   # chat-template multi-turn — for Executor
+        chat_fn  = build_chat_fn(mdl, tok)    # chat-template one-shot — for Planner + Critic
         print(f"Loaded {args.model} on {next(mdl.parameters()).device}")
 
     if args.compare:
-        compare(demo=demo, model_fn=model_fn)
+        compare(demo=demo, model_fn=model_fn, chat_fn=chat_fn, react_fn=react_fn)
     else:
-        results = eval_multi_agent(TASKS, model_fn=model_fn, demo=demo)
+        results = eval_multi_agent(
+            TASKS, model_fn=model_fn, chat_fn=chat_fn, react_fn=react_fn, demo=demo
+        )
         print(json.dumps({k: v for k, v in results.items() if k != "results"}, indent=2))

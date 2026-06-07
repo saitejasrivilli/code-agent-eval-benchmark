@@ -233,6 +233,38 @@ Add its inference call in `eval_benchmark.ipynb`, capture model output, latency,
 
 ---
 
+---
+
+## Multi-Agent Pipeline: Planner → Executor → Critic (`multi_agent_pipeline.py`)
+
+Extends the single ReAct agent with a three-agent orchestration loop that addresses two failure modes of the single-agent setup: hitting the step limit on multi-step tasks, and producing wrong-but-confident answers with no verification.
+
+```
+Planner  — decomposes the task into a concrete ordered plan (category-aware templates in demo mode)
+Executor — runs the ReAct loop anchored to the plan; knows which subgoal it's working on
+Critic   — independently verifies the answer; on rejection, injects corrective feedback and
+           triggers one retry
+```
+
+**Demo mode (no GPU, CI-safe):**
+```bash
+python multi_agent_pipeline.py --mode demo
+```
+
+**Compare single-agent vs multi-agent:**
+```bash
+python multi_agent_pipeline.py --compare
+```
+
+**Real model:**
+```bash
+python multi_agent_pipeline.py --mode hf --model Qwen/Qwen2.5-7B-Instruct
+```
+
+The pipeline reuses all tool infrastructure and tasks from `eval_tool_use.py`. The Critic uses numeric equality checking in demo mode and an LLM-based judge prompt in real mode.
+
+---
+
 ## Why This Benchmark Exists
 
 When building code agents or automation systems, accuracy alone is not enough. You also care about response time, token efficiency, cost, and reliability under tool-call failures. This project provides a simple, reproducible way to compare those tradeoffs — including a ReAct agent harness that tests error recovery, multi-step chaining, and tool accuracy, not just single-turn pass@1.

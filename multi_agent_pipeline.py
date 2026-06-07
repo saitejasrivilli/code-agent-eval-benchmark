@@ -36,7 +36,7 @@ from eval_tool_use import (
     TASKS, Task, TaskResult, StepRecord,
     TOOLS, TOOL_DESCRIPTIONS,
     _answers_match, _TOOL_CALL_RE, _FINAL_RE, _parse_tool_call,
-    _rule_based_agent, eval_tool_use,
+    _rule_based_agent, eval_tool_use, build_model_fn,
 )
 
 
@@ -312,8 +312,14 @@ def run_multi_agent(
     )
 
 
-def eval_multi_agent(tasks: list[Task], demo: bool = False) -> dict:
-    results = [run_multi_agent(t, _rule_based_agent, demo=demo) for t in tasks]
+def eval_multi_agent(
+    tasks: list[Task],
+    model_fn: Callable[[str], str] | None = None,
+    demo: bool = False,
+) -> dict:
+    if model_fn is None:
+        model_fn = _rule_based_agent
+    results = [run_multi_agent(t, model_fn, demo=demo) for t in tasks]
     n = len(results)
     return {
         "task_success":    round(sum(r.success for r in results) / n, 3),
@@ -328,15 +334,20 @@ def eval_multi_agent(tasks: list[Task], demo: bool = False) -> dict:
 # Comparison: single-agent vs multi-agent
 # ---------------------------------------------------------------------------
 
-def compare(demo: bool = True) -> None:
+def compare(
+    demo: bool = True,
+    model_fn: Callable[[str], str] | None = None,
+) -> None:
+    fn = model_fn if model_fn is not None else _rule_based_agent
+
     print("Single-agent (ReAct only):")
-    single = eval_tool_use(TASKS, _rule_based_agent)
+    single = eval_tool_use(model_fn=fn)
     print(f"  task_success={single['task_success']}  "
           f"tool_accuracy={single['tool_accuracy']}  "
-          f"avg_steps={single['avg_steps']}")
+          f"avg_steps={single['avg_steps_per_task']}")
 
     print("\nMulti-agent (Planner → Executor → Critic):")
-    multi = eval_multi_agent(TASKS, demo=demo)
+    multi = eval_multi_agent(TASKS, model_fn=fn, demo=demo)
     print(f"  task_success={multi['task_success']}  "
           f"retry_rate={multi['retry_rate']}  "
           f"critic_approval={multi['critic_approval']}")
@@ -352,14 +363,29 @@ def compare(demo: bool = True) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["demo", "hf"], default="demo")
+    ap.add_argument("--mode", choices=["demo", "hf"], default="demo",
+                    help="demo=rule-based (no GPU); hf=HuggingFace model")
     ap.add_argument("--model", default="Qwen/Qwen2.5-7B-Instruct")
-    ap.add_argument("--compare", action="store_true")
+    ap.add_argument("--compare", action="store_true",
+                    help="Print single-agent vs multi-agent delta")
     args = ap.parse_args()
 
-    if args.compare:
-        compare(demo=(args.mode == "demo"))
+    demo = args.mode == "demo"
+
+    if demo:
+        model_fn = _rule_based_agent
     else:
-        demo = args.mode == "demo"
-        results = eval_multi_agent(TASKS, demo=demo)
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        tok = AutoTokenizer.from_pretrained(args.model)
+        mdl = AutoModelForCausalLM.from_pretrained(
+            args.model, torch_dtype=torch.float16, device_map="auto"
+        )
+        model_fn = build_model_fn(mdl, tok)
+        print(f"Loaded {args.model} on {next(mdl.parameters()).device}")
+
+    if args.compare:
+        compare(demo=demo, model_fn=model_fn)
+    else:
+        results = eval_multi_agent(TASKS, model_fn=model_fn, demo=demo)
         print(json.dumps({k: v for k, v in results.items() if k != "results"}, indent=2))

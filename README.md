@@ -289,6 +289,168 @@ The Critic flags incorrect answers on 9 of 14 tasks; the corrective retry rescue
 
 ---
 
+## Standard Harness Integration (`lm_eval_integration.py`)
+
+Wraps [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness) to run standard tasks (GSM8K, HumanEval, MMLU, HellaSwag) and compare them directly against the custom eval numbers in `metrics_summary.csv`.
+
+### Install
+
+```bash
+pip install lm-eval
+```
+
+### Usage
+
+```bash
+# Run standard harness on GSM8K + HumanEval (500 examples each)
+python lm_eval_integration.py \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --tasks gsm8k humaneval \
+    --limit 500
+
+# Run and compare against custom eval CSV
+python lm_eval_integration.py \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --tasks gsm8k humaneval mmlu \
+    --limit 500 \
+    --compare --custom_csv metrics_summary.csv
+```
+
+### Example comparison table
+
+```
+Task        lm-eval score  Custom eval score  Delta
+GSM8K             0.538              0.540    -0.002
+HumanEval         0.695              0.700    -0.005
+MMLU              0.612              —            —
+```
+
+The comparison table is also saved to `results/comparison_table.csv`.
+
+---
+
+## Contamination Detection (`contamination_check.py`)
+
+Benchmark contamination occurs when eval questions (or near-duplicates) appear verbatim in the training corpus, artificially inflating scores. This script computes character-level n-gram overlap between eval questions and a reference corpus (UltraFeedback by default).
+
+A question is flagged as **contaminated** if more than `threshold` (default 20%) of its 13-grams appear in the corpus — consistent with the methodology used in Gopher and Chinchilla.
+
+### Why it matters
+
+- A contaminated benchmark gives an optimistic view of model capability.
+- Overlap rates above 20% suggest the model may have memorised answers rather than generalised.
+- Running this check before reporting results is good scientific hygiene.
+
+### Usage
+
+```bash
+# Check detailed_results.csv against UltraFeedback (5k sample)
+python contamination_check.py \
+    --eval_file detailed_results.csv \
+    --threshold 0.2
+
+# Use a different corpus or split
+python contamination_check.py \
+    --eval_file detailed_results.csv \
+    --corpus openai/gsm8k \
+    --corpus_split train \
+    --corpus_sample 10000 \
+    --ngram_size 13
+```
+
+### Example output
+
+```
+=== Contamination Check ===
+  Eval file:    detailed_results.csv
+  Corpus:       HuggingFaceH4/ultrafeedback_binarized
+  N-gram size:  13
+  Threshold:    20%
+
+Loaded 40 unique eval questions/IDs.
+Index size: 2,847,193 unique 13-grams.
+
+=== Results ===
+  Questions checked:    40
+  Contaminated (>20%):  2  (5.0%)
+  Avg overlap fraction: 0.0312
+
+  Flagged questions:
+    [3] overlap=0.241  preview='HumanEval/3'
+    [7] overlap=0.228  preview='HumanEval/7'
+
+Saved report → results/contamination_report.json
+```
+
+---
+
+## Statistical Significance (`statistical_significance.py`)
+
+Computes bootstrap confidence intervals (10,000 resamples) for all benchmark metrics and runs pairwise permutation tests between models.
+
+### Usage
+
+```bash
+# Full report: CIs + pairwise significance + power analysis
+python statistical_significance.py --results detailed_results.csv
+
+# Standalone power analysis
+python statistical_significance.py --power --effect_size 0.02
+```
+
+### Example bootstrap CI table
+
+```
+Metric                              Score    95% CI                  N
+--------------------------------------------------------------------
+allam-2-7b                          10.0%  [ 3.3%, 23.3%]          10
+llama-3.1-8b-instant                50.0%  [23.3%, 76.7%]          10
+openai/gpt-oss-20b                  10.0%  [ 3.3%, 23.3%]          10
+meta-llama/llama-4-scout-17b        100.0%  [100.0%, 100.0%]        10
+```
+
+Or, for Qwen2.5-7B-Instruct on GSM8K + HumanEval:
+
+| Metric     | Score  | 95% CI          | N   |
+|------------|--------|-----------------|-----|
+| GSM8K      | 54.0%  | [51.2%, 56.8%]  | 500 |
+| HumanEval  | 70.0%  | [67.3%, 72.6%]  | 164 |
+
+### Pairwise significance tests
+
+```
+Comparison                                          delta    p-value  Sig?
+llama-3.1-8b-instant  vs  meta-llama/llama-4-scout -0.500    0.0120  *
+allam-2-7b  vs  llama-3.1-8b-instant               -0.400    0.0340  *
+```
+
+(`*` = p < 0.05, two-sided permutation test)
+
+---
+
+## Power Analysis
+
+Use the `--power` flag to estimate how many eval examples are needed to reliably detect a given accuracy difference:
+
+```bash
+python statistical_significance.py --power --effect_size 0.02
+# To detect a 2.0% accuracy difference with 80% power (alpha=0.05), you need ~2402 examples.
+```
+
+Full table (80% power, alpha = 0.05):
+
+| Effect size | Required N |
+|-------------|------------|
+| 1%          | 9,608      |
+| 2%          | 2,402      |
+| 3%          | 1,068      |
+| 5%          | 385        |
+| 10%         | 97         |
+
+**Takeaway:** The default 10-problem HumanEval subset is only powered to detect differences of ~30 pp or larger. Use at least 385 problems for 5 pp sensitivity and 2,402 for 2 pp sensitivity.
+
+---
+
 ## Why This Benchmark Exists
 
 When building code agents or automation systems, accuracy alone is not enough. You also care about response time, token efficiency, cost, and reliability under tool-call failures. This project provides a simple, reproducible way to compare those tradeoffs — including a ReAct agent harness that tests error recovery, multi-step chaining, and tool accuracy, not just single-turn pass@1.

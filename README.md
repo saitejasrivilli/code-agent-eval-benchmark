@@ -524,6 +524,110 @@ python real_api_eval.py --compare --n 100
 
 ---
 
+## JSON Schema Conformance (`eval_json_conformance.py`)
+
+Evaluates structured output reliability — how accurately a model produces JSON that conforms to an explicit schema. Directly maps to production API usage where callers define schemas and expect strict adherence.
+
+**10 schemas**: `user_profile`, `api_response`, `tool_call`, `search_result`, `code_review`, `calendar_event`, `product_listing`, `error_response`, `model_completion`, `agent_action`
+
+**Four error modes measured:**
+
+| Metric | Description |
+|--------|-------------|
+| `strict_acc` | Valid JSON + all required fields + correct types (passes `jsonschema.validate`) |
+| `partial_acc` | Valid JSON + required fields present but ≥1 type mismatch |
+| `halluc_rate` | Extra keys not defined in the schema |
+| `missing_rate` | Required fields absent |
+
+**Baseline — demo mode (correct outputs, validates harness):**
+
+| Schema | strict_acc | halluc_rate | missing_rate |
+|--------|-----------|-------------|--------------|
+| user_profile | 100.0% | 0.0% | 0.0% |
+| tool_call | 100.0% | 0.0% | 0.0% |
+| agent_action | 100.0% | 0.0% | 0.0% |
+| … (10 schemas) | **100.0%** | **0.0%** | **0.0%** |
+
+```bash
+python eval_json_conformance.py --mode demo               # verify harness (no GPU)
+CUDA_VISIBLE_DEVICES=0 python eval_json_conformance.py \
+    --model Qwen/Qwen2.5-7B-Instruct --n 50              # real model eval
+```
+
+---
+
+## Multi-Turn Conversation Eval (`eval_multiturn.py`)
+
+Extends the single-turn ReAct harness to 3–5 turn conversations where each turn depends on the previous. Tests context retention, instruction fidelity over long conversations, and self-correction.
+
+**20 tasks across 4 categories:**
+
+| Category | Tasks | What it tests |
+|---|---|---|
+| `reference_chain` | 5 | "Compute X" → "Multiply that by Y" → "What was my first answer?" |
+| `state_tracking` | 5 | Shopping cart / inventory / to-do list modified across turns |
+| `instruction_stack` | 5 | Each turn adds a new constraint; ALL must hold simultaneously by the final turn |
+| `recovery_test` | 5 | Injected wrong answer in turn 2; measures whether model self-corrects when asked to verify |
+
+**Three failure modes measured:**
+- **Context loss** — model ignores or contradicts a prior turn's result (`depends_on` check)
+- **Instruction drift** — model drops accumulated constraints by turn 4–5
+- **Recovery** — model self-corrects after an injected error
+
+**Measured results — demo ceiling (rule-based agent):**
+
+| Category | Success | Context loss | Drift | Recovery |
+|---|---|---|---|---|
+| reference_chain | **5/5** | 0 | 0 | — |
+| state_tracking | **5/5** | 0 | 0 | — |
+| instruction_stack | **5/5** | 0 | 0 | — |
+| recovery_test | **5/5** | 0 | 0 | **5/5** |
+| **OVERALL** | **20/20 (100%)** | **0%** | **0%** | **100%** |
+
+```bash
+python eval_multiturn.py --mode demo
+CUDA_VISIBLE_DEVICES=0 python eval_multiturn.py --mode hf \
+    --model Qwen/Qwen2.5-7B-Instruct
+```
+
+---
+
+## Contrastive Instruction Robustness (`eval_contrastive_instructions.py`)
+
+200 pairs of (correct instruction, adversarial paraphrase) across 5 strategies. Measures whether a model follows the original intent or is fooled by subtle rewording — the core thing post-training tries to fix.
+
+**5 adversarial strategies (40 pairs each):**
+
+| Strategy | Example | Risk |
+|---|---|---|
+| `format_override` | "Respond in JSON" + XML example appended | Example hijacks format |
+| `late_contradiction` | Correct instruction early + contradiction appended at end | Late text overrides earlier |
+| `implicit_negation` | "Don't NOT use bullet points" | Double negative confuses model |
+| `example_hijack` | Correct rule + wrong-format demo example | Model imitates example over rule |
+| `scope_creep` | "Answer in 1 sentence" + "cover all aspects" | Extra requirements make constraint impossible |
+
+**Measured results — demo agent (rule-based baseline):**
+
+| Strategy | Adherence | Fooling | Partial |
+|---|---|---|---|
+| format_override | 60.0% | 5.0% | 35.0% |
+| late_contradiction | 90.0% | 10.0% | 0.0% |
+| **implicit_negation** | 55.0% | **37.5%** | 7.5% |
+| example_hijack | 75.0% | 5.0% | 20.0% |
+| scope_creep | **100.0%** | 0.0% | 0.0% |
+| **OVERALL** | **76.0%** | **11.5%** | **12.5%** |
+
+Key finding: `implicit_negation` is the most dangerous strategy — 37.5% fooling rate. `implicit_negation` + `late_contradiction` account for 83% of all failures.
+
+```bash
+python eval_contrastive_instructions.py --mode demo           # no GPU
+python eval_contrastive_instructions.py --mode demo --compare # side-by-side table
+CUDA_VISIBLE_DEVICES=0 python eval_contrastive_instructions.py \
+    --model Qwen/Qwen2.5-7B-Instruct --n 100
+```
+
+---
+
 ## Why This Benchmark Exists
 
 When building code agents or automation systems, accuracy alone is not enough. You also care about response time, token efficiency, cost, and reliability under tool-call failures. This project provides a simple, reproducible way to compare those tradeoffs — including a ReAct agent harness that tests error recovery, multi-step chaining, and tool accuracy, not just single-turn pass@1.

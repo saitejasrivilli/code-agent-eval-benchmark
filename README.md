@@ -451,7 +451,82 @@ Full table (80% power, alpha = 0.05):
 
 ---
 
+---
+
+## Failure-Driven SFT Loop (`generate_sft_data.py` + `finetune_on_failures.py`)
+
+Closes the eval→train→re-eval loop: failures from `eval_tool_use.py` become SFT training examples; the fine-tuned model is re-evaluated to measure the improvement.
+
+### Step 1 — Generate SFT data from failures
+
+```bash
+python generate_sft_data.py \
+    --input results/tool_use_results.json \
+    --output data/sft_from_failures.jsonl \
+    --augment 3          # 3× rephrasings per failure
+    --real_data          # also pull from Salesforce/xlam-function-calling-60k
+    --real_n 100
+```
+
+Per-category correction strategy:
+| Category | Strategy |
+|---|---|
+| `computation` | Reteach correct `python_exec` / `calculator` call |
+| `error_recovery` | Add try/fallback pattern: fail → detect → correct call |
+| `multi_step` | Explicit numbered sub-steps in CoT |
+| `knowledge_compute` | lookup → store result → plug into calculator |
+
+Output: JSONL with `{"messages": [...], "source": "synthetic"/"real_api", "category": "..."}`.
+
+### Step 2 — Fine-tune on failures + re-eval
+
+```bash
+python finetune_on_failures.py \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --sft_data data/sft_from_failures.jsonl \
+    --output_dir checkpoints/tool_use_sft \
+    --output results/finetuning_results.json
+
+# Dry-run (no GPU needed — prints config + step count)
+python finetune_on_failures.py --dry_run
+```
+
+Uses QLoRA (4-bit NF4, LoRA r=16, α=32), 3 epochs, lr=2e-4. Prints a before/after comparison table per category.
+
+---
+
+## Real Function-Calling Eval (`real_api_eval.py`)
+
+Evaluates function-calling accuracy on real developer queries from `Salesforce/xlam-function-calling-60k` (60K examples across APIs).
+
+### Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `name_acc` | Correct function name called |
+| `args_acc` | Correct arguments (normalised: lowercase strings, 2-decimal floats) |
+| `full_acc` | Both name and args correct |
+| `halluc_rate` | Fraction of calls naming a non-existent function |
+
+### Usage
+
+```bash
+# Demo mode (rule-based agent, no GPU)
+python real_api_eval.py --mode demo --n 50
+
+# Real model
+CUDA_VISIBLE_DEVICES=0 python real_api_eval.py \
+    --model Qwen/Qwen2.5-7B-Instruct --n 200
+
+# Side-by-side synthetic vs real
+python real_api_eval.py --compare --n 100
+```
+
+---
+
 ## Why This Benchmark Exists
 
 When building code agents or automation systems, accuracy alone is not enough. You also care about response time, token efficiency, cost, and reliability under tool-call failures. This project provides a simple, reproducible way to compare those tradeoffs — including a ReAct agent harness that tests error recovery, multi-step chaining, and tool accuracy, not just single-turn pass@1.
+
+The failure-driven SFT loop (`generate_sft_data.py` → `finetune_on_failures.py`) closes the gap between evaluation and improvement: failures are not just diagnosed but corrected with targeted training data, making the benchmark actionable rather than just diagnostic.
 
